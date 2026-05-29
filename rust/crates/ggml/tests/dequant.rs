@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use ggml::{dequant_f16, dequant_q4_0, dequant_q8_0};
+use ggml::{dequant_f16, dequant_q4_0, dequant_q4_k, dequant_q8_0};
 
 fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/dequant")
@@ -98,4 +98,54 @@ fn q4_0_byte_exact_vs_oracle() {
     let mut actual = vec![0.0f32; expected.len()];
     dequant_q4_0(&src, &mut actual);
     assert_byte_equal(&actual, &expected, "q4_0");
+}
+
+#[test]
+fn q4_k_byte_exact_vs_oracle() {
+    let dir = fixtures_dir();
+    let src = std::fs::read(dir.join("q4_k_input.bin")).expect("q4_k_input.bin");
+    let expected = read_f32s(&dir.join("q4_k_output.bin"));
+    assert_eq!(
+        src.len(),
+        4 * 144,
+        "q4_k fixture should be 4 super-blocks (576 bytes)"
+    );
+    assert_eq!(
+        expected.len(),
+        4 * 256,
+        "q4_k fixture should expand to 1024 f32 values"
+    );
+
+    let mut actual = vec![0.0f32; expected.len()];
+    dequant_q4_k(&src, &mut actual);
+    assert_byte_equal(&actual, &expected, "q4_k");
+}
+
+#[test]
+fn q4_k_real_tensor_vs_oracle() {
+    let dir = fixtures_dir();
+    let input_path = dir.join("q4_k_qwen_input.bin");
+    let output_path = dir.join("q4_k_qwen_output.bin");
+    if !input_path.exists() || !output_path.exists() {
+        eprintln!(
+            "skipping q4_k_real_tensor_vs_oracle: fixtures missing (regenerate with tests/fixtures/dequant/regenerate.sh)"
+        );
+        return;
+    }
+    let src = std::fs::read(&input_path).expect("q4_k_qwen_input.bin");
+    let expected = read_f32s(&output_path);
+    assert_eq!(
+        src.len(),
+        4 * 144,
+        "q4_k qwen fixture should be 4 super-blocks (576 bytes)"
+    );
+    assert_eq!(
+        expected.len(),
+        4 * 256,
+        "q4_k qwen fixture should expand to 1024 f32 values"
+    );
+
+    let mut actual = vec![0.0f32; expected.len()];
+    dequant_q4_k(&src, &mut actual);
+    assert_byte_equal(&actual, &expected, "q4_k_qwen");
 }

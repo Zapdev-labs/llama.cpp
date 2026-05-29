@@ -1,3 +1,4 @@
 /target
 /oracle/build/
 /oracle/.deps/
+!crates/*/tests/fixtures/**/*.bin
