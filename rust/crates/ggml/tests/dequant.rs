@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use ggml::{dequant_f16, dequant_q8_0};
+use ggml::{dequant_f16, dequant_q4_0, dequant_q8_0};
 
 fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/dequant")
@@ -77,4 +77,25 @@ fn q8_0_byte_exact_vs_oracle() {
     let mut actual = vec![0.0f32; expected.len()];
     dequant_q8_0(&src, &mut actual);
     assert_byte_equal(&actual, &expected, "q8_0");
+}
+
+#[test]
+fn q4_0_byte_exact_vs_oracle() {
+    let dir = fixtures_dir();
+    let src = std::fs::read(dir.join("q4_0_input.bin")).expect("q4_0_input.bin");
+    let expected = read_f32s(&dir.join("q4_0_output.bin"));
+    assert_eq!(
+        src.len(),
+        8 * 18,
+        "q4_0 fixture should be 8 blocks (144 bytes)"
+    );
+    assert_eq!(
+        expected.len(),
+        8 * 32,
+        "q4_0 fixture should expand to 256 f32 values"
+    );
+
+    let mut actual = vec![0.0f32; expected.len()];
+    dequant_q4_0(&src, &mut actual);
+    assert_byte_equal(&actual, &expected, "q4_0");
 }

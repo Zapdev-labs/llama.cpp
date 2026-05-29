@@ -10,6 +10,8 @@ binary at `rust/oracle/build/oracle`.
 | `f16_output.bin`    | 4096  | 1024 little-endian `f32`              |
 | `q8_0_input.bin`    | 272   | 8 blocks of `{ d: f16, qs: [i8; 32] }`|
 | `q8_0_output.bin`   | 1024  | 256 little-endian `f32`               |
+| `q4_0_input.bin`    | 144   | 8 blocks of `{ d: f16, qs: [u8; 16] }`|
+| `q4_0_output.bin`   | 1024  | 256 little-endian `f32`               |
 
 Regenerate with `./regenerate.sh`. CI does NOT regenerate — the fixtures
 are the contract.

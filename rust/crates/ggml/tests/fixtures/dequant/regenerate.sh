@@ -59,10 +59,24 @@ with open(os.path.join(out_dir, "q8_0_input.bin"), "wb") as f:
         f.write(struct.pack("<H", d_bits))
         for _ in range(32):
             f.write(struct.pack("<b", rng.randrange(-128, 128)))
+
+# q4_0 fixture: 8 blocks; each block is { d: f16, qs: [u8; 16] }, where each
+# byte of qs packs two 4-bit nibbles. Same scale-distribution strategy as
+# q8_0; nibble bytes cover the full u8 range so both nibbles span 0..16.
+rng = random.Random(0xC4_0FEED)
+with open(os.path.join(out_dir, "q4_0_input.bin"), "wb") as f:
+    for blk in range(8):
+        mag  = 10.0 ** rng.uniform(-4, 0)
+        sign = -1.0 if rng.random() < 0.5 else 1.0
+        d_bits = f32_to_f16_bits(sign * mag)
+        f.write(struct.pack("<H", d_bits))
+        for _ in range(16):
+            f.write(struct.pack("<B", rng.randrange(0, 256)))
 PY
 
 "$ORACLE" dequant f16  "$HERE/f16_input.bin"  "$HERE/f16_output.bin"
 "$ORACLE" dequant q8_0 "$HERE/q8_0_input.bin" "$HERE/q8_0_output.bin"
+"$ORACLE" dequant q4_0 "$HERE/q4_0_input.bin" "$HERE/q4_0_output.bin"
 
 echo "regenerated:"
 ls -l "$HERE"/*.bin
