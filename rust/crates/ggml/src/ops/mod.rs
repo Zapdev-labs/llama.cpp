@@ -8,6 +8,8 @@
 
 pub mod add;
 pub mod mul;
+pub mod rmsnorm;
 
 pub use add::add_inplace;
 pub use mul::mul_inplace;
+pub use rmsnorm::rmsnorm;

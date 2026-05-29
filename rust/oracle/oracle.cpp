@@ -1,18 +1,25 @@
 // oracle — ground-truth harness for the pure-Rust llama.cpp port.
 //
-// Three subcommands:
-//   oracle dequant  <type> <input.bin> <output.bin>
-//   oracle logits   <model.gguf> <prompt> <n>
-//   oracle tokenize <model.gguf> <text>
+// Subcommands:
+//   oracle dequant         <type> <input.bin> <output.bin>
+//   oracle logits          <model.gguf> <prompt> <n>
+//   oracle tokenize        <model.gguf> <text>
+//   oracle rms_norm        <input.bin> <weight.bin> <eps> <output.bin>
+//   oracle rmsnorm_capture <model.gguf> <prompt> <out_dir>
 //
 // All numeric output is little-endian f32. The binary links against the
 // pre-built libllama.so + libggml*.so under build/ and is therefore not
 // portable — do not commit it.
 
 #include "ggml.h"
+#include "ggml-alloc.h"
+#include "ggml-backend.h"
+#include "ggml-cpu.h"
+#include "gguf.h"
 #include "llama.h"
 
 #include <cerrno>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -38,7 +45,17 @@ int print_help(const char * argv0) {
         "      then write the final-step logits as binary f32 to stdout.\n"
         "\n"
         "  tokenize <model.gguf> <text>\n"
-        "      tokenize <text> (with model-default BOS) and write one decimal token ID per line to stdout.\n",
+        "      tokenize <text> (with model-default BOS) and write one decimal token ID per line to stdout.\n"
+        "\n"
+        "  rms_norm <input.bin> <weight.bin> <eps> <output.bin>\n"
+        "      compute ggml_rms_norm(input, eps) * weight using libggml on the CPU backend.\n"
+        "      input/weight are little-endian f32 streams; input length must be a multiple of weight length.\n"
+        "\n"
+        "  rmsnorm_capture <model.gguf> <prompt> <out_dir>\n"
+        "      load the model, tokenize <prompt> (with model-default BOS), run one forward decode,\n"
+        "      and dump three little-endian f32 files into <out_dir>: input.bin (post-block-0 hidden\n"
+        "      state, the input to blk.1.attn_norm), weight.bin (blk.1.attn_norm.weight), and\n"
+        "      expected.bin (the output of blk.1.attn_norm = rms_norm(input) * weight).\n",
         argv0);
     return 0;
 }
@@ -296,6 +313,291 @@ int cmd_logits(int argc, char ** argv) {
     return 0;
 }
 
+int cmd_rms_norm(int argc, char ** argv) {
+    if (argc != 6) {
+        std::fprintf(stderr, "oracle rms_norm: expected <input.bin> <weight.bin> <eps> <output.bin>\n");
+        return 2;
+    }
+    const std::string in_path  = argv[2];
+    const std::string w_path   = argv[3];
+    const std::string eps_s    = argv[4];
+    const std::string out_path = argv[5];
+
+    const float eps = std::strtof(eps_s.c_str(), nullptr);
+    if (!std::isfinite(eps) || eps <= 0.0f) {
+        std::fprintf(stderr, "oracle rms_norm: eps must be a positive finite float, got '%s'\n", eps_s.c_str());
+        return 2;
+    }
+
+    std::vector<uint8_t> in_bytes;
+    std::vector<uint8_t> w_bytes;
+    if (!read_file(in_path, in_bytes) || !read_file(w_path, w_bytes)) {
+        return 1;
+    }
+    if (in_bytes.size() % sizeof(float) != 0 || w_bytes.size() % sizeof(float) != 0) {
+        std::fprintf(stderr, "oracle rms_norm: input/weight sizes must be a multiple of 4 bytes\n");
+        return 1;
+    }
+    const int64_t n_in = static_cast<int64_t>(in_bytes.size() / sizeof(float));
+    const int64_t n_w  = static_cast<int64_t>(w_bytes.size()  / sizeof(float));
+    if (n_w == 0 || n_in % n_w != 0) {
+        std::fprintf(stderr,
+            "oracle rms_norm: input length %lld must be a positive multiple of weight length %lld\n",
+            (long long) n_in, (long long) n_w);
+        return 1;
+    }
+    const int64_t n_rows = n_in / n_w;
+
+    const size_t mem_size = ggml_tensor_overhead() * 16 + ggml_graph_overhead();
+    std::vector<uint8_t> mem(mem_size);
+    ggml_init_params iparams = { mem_size, mem.data(), true };
+    ggml_context * ctx = ggml_init(iparams);
+    if (ctx == nullptr) {
+        std::fprintf(stderr, "oracle rms_norm: ggml_init failed\n");
+        return 1;
+    }
+
+    ggml_tensor * a   = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, n_w, n_rows);
+    ggml_tensor * w   = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, n_w);
+    ggml_set_name(a, "input");
+    ggml_set_name(w, "weight");
+    ggml_tensor * n_t = ggml_rms_norm(ctx, a, eps);
+    ggml_tensor * out = ggml_mul(ctx, n_t, w);
+    ggml_set_name(out, "expected");
+
+    ggml_cgraph * g = ggml_new_graph(ctx);
+    ggml_build_forward_expand(g, out);
+
+    ggml_backend_t backend = ggml_backend_cpu_init();
+    if (backend == nullptr) {
+        std::fprintf(stderr, "oracle rms_norm: ggml_backend_cpu_init failed\n");
+        ggml_free(ctx);
+        return 1;
+    }
+    ggml_gallocr_t alloc = ggml_gallocr_new(ggml_backend_get_default_buffer_type(backend));
+    if (!ggml_gallocr_alloc_graph(alloc, g)) {
+        std::fprintf(stderr, "oracle rms_norm: gallocr_alloc_graph failed\n");
+        ggml_gallocr_free(alloc);
+        ggml_backend_free(backend);
+        ggml_free(ctx);
+        return 1;
+    }
+
+    ggml_backend_tensor_set(a, in_bytes.data(), 0, in_bytes.size());
+    ggml_backend_tensor_set(w, w_bytes.data(),  0, w_bytes.size());
+
+    if (ggml_backend_graph_compute(backend, g) != GGML_STATUS_SUCCESS) {
+        std::fprintf(stderr, "oracle rms_norm: graph compute failed\n");
+        ggml_gallocr_free(alloc);
+        ggml_backend_free(backend);
+        ggml_free(ctx);
+        return 1;
+    }
+
+    std::vector<float> out_data(static_cast<size_t>(n_in));
+    ggml_backend_tensor_get(out, out_data.data(), 0, out_data.size() * sizeof(float));
+
+    ggml_gallocr_free(alloc);
+    ggml_backend_free(backend);
+    ggml_free(ctx);
+
+    if (!write_file(out_path, out_data.data(), out_data.size() * sizeof(float))) {
+        return 1;
+    }
+    return 0;
+}
+
+struct RmsNormCaptureState {
+    std::vector<float> input;
+    std::vector<float> expected;
+    int64_t input_rows = 0;
+    int64_t input_cols = 0;
+    int64_t expected_rows = 0;
+    int64_t expected_cols = 0;
+    std::string input_name;
+    std::string expected_name;
+};
+
+bool capture_eval_cb(ggml_tensor * t, bool ask, void * user_data) {
+    RmsNormCaptureState * s = static_cast<RmsNormCaptureState *>(user_data);
+    const char * name = t->name;
+    const bool want = (name && (s->input_name == name || s->expected_name == name));
+    if (ask) {
+        return want;
+    }
+    if (!want || t->type != GGML_TYPE_F32) {
+        return true;
+    }
+    const int64_t n = ggml_nelements(t);
+    std::vector<float> & dst = (s->input_name == name) ? s->input : s->expected;
+    dst.assign(static_cast<size_t>(n), 0.0f);
+    ggml_backend_tensor_get(t, dst.data(), 0, dst.size() * sizeof(float));
+    if (s->input_name == name) {
+        s->input_cols = t->ne[0];
+        s->input_rows = t->ne[1];
+    } else {
+        s->expected_cols = t->ne[0];
+        s->expected_rows = t->ne[1];
+    }
+    return true;
+}
+
+bool read_f32_weight_from_gguf(const std::string & path, const std::string & tensor_name, std::vector<float> & out) {
+    gguf_init_params gparams = { /*no_alloc=*/ true, /*ctx=*/ nullptr };
+    gguf_context * gctx = gguf_init_from_file(path.c_str(), gparams);
+    if (gctx == nullptr) {
+        std::fprintf(stderr, "oracle: gguf_init_from_file failed for %s\n", path.c_str());
+        return false;
+    }
+    const int64_t idx = gguf_find_tensor(gctx, tensor_name.c_str());
+    if (idx < 0) {
+        std::fprintf(stderr, "oracle: tensor '%s' not found in %s\n", tensor_name.c_str(), path.c_str());
+        gguf_free(gctx);
+        return false;
+    }
+    const ggml_type ty   = gguf_get_tensor_type(gctx, idx);
+    const size_t nbytes  = gguf_get_tensor_size(gctx, idx);
+    const size_t toff    = gguf_get_tensor_offset(gctx, idx);
+    const size_t doff    = gguf_get_data_offset(gctx);
+    gguf_free(gctx);
+    if (ty != GGML_TYPE_F32) {
+        std::fprintf(stderr, "oracle: tensor '%s' is type %d, expected F32\n",
+            tensor_name.c_str(), static_cast<int>(ty));
+        return false;
+    }
+    if (nbytes % sizeof(float) != 0) {
+        std::fprintf(stderr, "oracle: tensor '%s' has non-multiple-of-4 size %zu\n",
+            tensor_name.c_str(), nbytes);
+        return false;
+    }
+    std::ifstream f(path, std::ios::binary);
+    if (!f) {
+        std::fprintf(stderr, "oracle: cannot reopen %s: %s\n", path.c_str(), std::strerror(errno));
+        return false;
+    }
+    f.seekg(static_cast<std::streamoff>(doff + toff));
+    out.assign(nbytes / sizeof(float), 0.0f);
+    if (!f.read(reinterpret_cast<char *>(out.data()), static_cast<std::streamsize>(nbytes))) {
+        std::fprintf(stderr, "oracle: short read for tensor '%s' in %s\n", tensor_name.c_str(), path.c_str());
+        return false;
+    }
+    return true;
+}
+
+bool ensure_dir(const std::string & path) {
+    if (path.empty()) {
+        return false;
+    }
+    std::string cmd = "mkdir -p '" + path + "'";
+    return std::system(cmd.c_str()) == 0;
+}
+
+int cmd_rmsnorm_capture(int argc, char ** argv) {
+    if (argc != 5) {
+        std::fprintf(stderr, "oracle rmsnorm_capture: expected <model.gguf> <prompt> <out_dir>\n");
+        return 2;
+    }
+    const std::string model_path = argv[2];
+    const std::string prompt     = argv[3];
+    const std::string out_dir    = argv[4];
+
+    if (!ensure_dir(out_dir)) {
+        std::fprintf(stderr, "oracle rmsnorm_capture: cannot create %s\n", out_dir.c_str());
+        return 1;
+    }
+
+    RmsNormCaptureState state;
+    state.input_name    = "l_out-0";
+    state.expected_name = "attn_norm-1";
+
+    llama_backend_init();
+    llama_model_params mparams = llama_model_default_params();
+    llama_model * model = llama_model_load_from_file(model_path.c_str(), mparams);
+    if (model == nullptr) {
+        std::fprintf(stderr, "oracle: failed to load model %s\n", model_path.c_str());
+        llama_backend_free();
+        return 1;
+    }
+    const llama_vocab * vocab = llama_model_get_vocab(model);
+
+    llama_context_params cparams = llama_context_default_params();
+    cparams.n_ctx            = 512;
+    cparams.n_batch          = 512;
+    cparams.n_ubatch         = 512;
+    cparams.no_perf          = true;
+    cparams.cb_eval          = &capture_eval_cb;
+    cparams.cb_eval_user_data = &state;
+    llama_context * ctx = llama_init_from_model(model, cparams);
+    if (ctx == nullptr) {
+        std::fprintf(stderr, "oracle: failed to create context for %s\n", model_path.c_str());
+        llama_model_free(model);
+        llama_backend_free();
+        return 1;
+    }
+
+    std::vector<llama_token> tokens;
+    if (!tokenize(vocab, prompt, true, tokens)) {
+        llama_free(ctx);
+        llama_model_free(model);
+        llama_backend_free();
+        return 1;
+    }
+    if (tokens.empty()) {
+        std::fprintf(stderr, "oracle rmsnorm_capture: prompt tokenized to zero tokens\n");
+        llama_free(ctx);
+        llama_model_free(model);
+        llama_backend_free();
+        return 1;
+    }
+
+    llama_batch batch = llama_batch_get_one(tokens.data(), static_cast<int32_t>(tokens.size()));
+    if (llama_decode(ctx, batch) != 0) {
+        std::fprintf(stderr, "oracle rmsnorm_capture: decode failed\n");
+        llama_free(ctx);
+        llama_model_free(model);
+        llama_backend_free();
+        return 1;
+    }
+
+    llama_free(ctx);
+    llama_model_free(model);
+    llama_backend_free();
+
+    if (state.input.empty() || state.expected.empty()) {
+        std::fprintf(stderr,
+            "oracle rmsnorm_capture: did not capture both tensors (input rows=%lld cols=%lld, expected rows=%lld cols=%lld)\n",
+            (long long) state.input_rows, (long long) state.input_cols,
+            (long long) state.expected_rows, (long long) state.expected_cols);
+        return 1;
+    }
+    if (state.input.size() != state.expected.size()) {
+        std::fprintf(stderr,
+            "oracle rmsnorm_capture: input and expected sizes differ (%zu vs %zu)\n",
+            state.input.size(), state.expected.size());
+        return 1;
+    }
+
+    std::vector<float> weight;
+    if (!read_f32_weight_from_gguf(model_path, "blk.1.attn_norm.weight", weight)) {
+        return 1;
+    }
+    if (state.input_cols != static_cast<int64_t>(weight.size())) {
+        std::fprintf(stderr,
+            "oracle rmsnorm_capture: weight length %zu != input cols %lld\n",
+            weight.size(), (long long) state.input_cols);
+        return 1;
+    }
+
+    if (!write_file(out_dir + "/input.bin",    state.input.data(),    state.input.size()    * sizeof(float))) return 1;
+    if (!write_file(out_dir + "/weight.bin",   weight.data(),         weight.size()         * sizeof(float))) return 1;
+    if (!write_file(out_dir + "/expected.bin", state.expected.data(), state.expected.size() * sizeof(float))) return 1;
+
+    std::fprintf(stderr,
+        "oracle rmsnorm_capture: wrote input.bin (%lld rows x %lld cols), weight.bin (%zu f32), expected.bin (same shape as input).\n",
+        (long long) state.input_rows, (long long) state.input_cols, weight.size());
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char ** argv) {
@@ -307,9 +609,11 @@ int main(int argc, char ** argv) {
     if (sub == "--help" || sub == "-h" || sub == "help") {
         return print_help(argv[0]);
     }
-    if (sub == "dequant")  return cmd_dequant(argc, argv);
-    if (sub == "logits")   return cmd_logits(argc, argv);
-    if (sub == "tokenize") return cmd_tokenize(argc, argv);
+    if (sub == "dequant")          return cmd_dequant(argc, argv);
+    if (sub == "logits")           return cmd_logits(argc, argv);
+    if (sub == "tokenize")         return cmd_tokenize(argc, argv);
+    if (sub == "rms_norm")         return cmd_rms_norm(argc, argv);
+    if (sub == "rmsnorm_capture")  return cmd_rmsnorm_capture(argc, argv);
 
     std::fprintf(stderr, "oracle: unknown subcommand '%s'\n\n", sub.c_str());
     print_help(argv[0]);

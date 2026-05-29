@@ -8,3 +8,7 @@ repository.workspace = true
 
 [dependencies]
 half = "2.7"
+
+[dev-dependencies]
+rand = "0.10"
+rand_chacha = "0.10"
