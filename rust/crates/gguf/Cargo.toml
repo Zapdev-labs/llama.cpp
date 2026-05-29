@@ -1,0 +1,10 @@
+[package]
+name = "gguf"
+description = "GGUF model file format reader, ported to safe Rust (part of the llama.cpp Rust port)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ggml = { path = "../ggml" }

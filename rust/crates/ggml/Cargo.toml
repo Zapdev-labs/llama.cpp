@@ -1,0 +1,9 @@
+[package]
+name = "ggml"
+description = "Core ggml tensor types, ported to safe Rust (part of the llama.cpp Rust port)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
