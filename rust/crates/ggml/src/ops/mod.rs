@@ -7,6 +7,7 @@
 //! rows; intra-row reductions stay on a single thread.
 
 pub mod add;
+pub mod matmul;
 pub mod mul;
 pub mod rmsnorm;
 pub mod rope;
@@ -14,6 +15,7 @@ pub mod silu;
 pub mod softmax;
 
 pub use add::add_inplace;
+pub use matmul::matmul_f32;
 pub use mul::mul_inplace;
 pub use rmsnorm::rmsnorm;
 pub use rope::rope_inplace_neox;
