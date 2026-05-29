@@ -1,0 +1,13 @@
+//! Pure-Rust CPU operator kernels.
+//!
+//! Mirrors the `ggml_compute_forward_*` family in
+//! `ggml/src/ggml-cpu/ops.c`. Each kernel returns `()` and writes into a
+//! caller-supplied `&mut [f32]`. Per the determinism rules in this
+//! workspace's `AGENTS.md`, ops that parallelize do so over independent
+//! rows; intra-row reductions stay on a single thread.
+
+pub mod add;
+pub mod mul;
+
+pub use add::add_inplace;
+pub use mul::mul_inplace;

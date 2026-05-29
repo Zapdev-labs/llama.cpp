@@ -13,9 +13,11 @@ use core::fmt;
 
 pub mod dequant;
 pub mod layout;
+pub mod ops;
 
 pub use dequant::{dequant_f16, dequant_q4_0, dequant_q4_k, dequant_q8_0};
 pub use layout::TensorLayout;
+pub use ops::{add_inplace, mul_inplace};
 
 /// Maximum number of tensor dimensions (`GGML_MAX_DIMS`).
 pub const GGML_MAX_DIMS: usize = 4;
