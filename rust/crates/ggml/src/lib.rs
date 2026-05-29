@@ -17,7 +17,9 @@ pub mod ops;
 
 pub use dequant::{dequant_f16, dequant_q4_0, dequant_q4_k, dequant_q8_0};
 pub use layout::TensorLayout;
-pub use ops::{add_inplace, mul_inplace, rmsnorm, silu_inplace, softmax_inplace};
+pub use ops::{
+    add_inplace, mul_inplace, rmsnorm, rope_inplace_neox, silu_inplace, softmax_inplace,
+};
 
 /// Maximum number of tensor dimensions (`GGML_MAX_DIMS`).
 pub const GGML_MAX_DIMS: usize = 4;
