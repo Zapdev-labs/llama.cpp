@@ -9,7 +9,11 @@
 pub mod add;
 pub mod mul;
 pub mod rmsnorm;
+pub mod silu;
+pub mod softmax;
 
 pub use add::add_inplace;
 pub use mul::mul_inplace;
 pub use rmsnorm::rmsnorm;
+pub use silu::silu_inplace;
+pub use softmax::softmax_inplace;
