@@ -1,0 +1,20 @@
+src/models/longcat-flash.cpp
+  s_4da79edf1a88b6::t_f4c5834cc499da 136
+  s_4da79edf1a88b6::t_aae11e987e5cdc 135,137-139
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "b003f18daceda44182c0eb2457a2dada4d8dc936",
+  "prompts": {},
+  "sessions": {
+    "s_4da79edf1a88b6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b12c1b5a-69b6-4678-a254-9674bb274570",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Jackson57279 <otdoges@proton.me>"
+    }
+  }
+}
