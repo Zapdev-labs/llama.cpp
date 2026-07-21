@@ -1,0 +1,70 @@
+conversion/__init__.py
+  s_4da79edf1a88b6::t_762eefa3bd82f9 140
+src/llama-kv-cache.cpp
+  s_4da79edf1a88b6::t_0692c19d0ded71 2590-2593
+  s_4da79edf1a88b6::t_de77d79ca28442 681-698
+  s_4da79edf1a88b6::t_9c70b0f3e7158d 1147-1153
+src/llama-vocab.h
+  s_4da79edf1a88b6::t_fe64382a5b301a 67
+conversion/longcat.py
+  s_4da79edf1a88b6::t_0f6429cc8929ae 4,8-9,11
+  s_4da79edf1a88b6::t_9c8346cbc48055 107
+  s_4da79edf1a88b6::t_7f61cee37fcb78 35-36
+  s_4da79edf1a88b6::t_d3dbae634a2d3f 1-3,5-7,10,12-34,37-106,108-170
+src/llama-arch.cpp
+  s_4da79edf1a88b6::t_890987850bbeb1 678-679
+  s_4da79edf1a88b6::t_e41ad63e30353b 496-497
+  s_4da79edf1a88b6::t_7cdbe73227fe31 999
+  s_4da79edf1a88b6::t_175369bdb9ff35 78
+  s_4da79edf1a88b6::t_69846754e88b4b 199-201
+src/llama-vocab.cpp
+  s_4da79edf1a88b6::t_ca91a492cfccd1 318-324
+  s_4da79edf1a88b6::t_9b52f3940cbd84 2146-2148
+src/llama-hparams.h
+  s_4da79edf1a88b6::t_bd2db1a099713b 93-95
+src/llama-kv-cache.h
+  s_4da79edf1a88b6::t_da6654d5304c2c 145-147
+  s_4da79edf1a88b6::t_af2f05abb32237 370-371
+src/llama-model.cpp
+  s_4da79edf1a88b6::t_e38c35dc54cdc2 183-184
+  s_4da79edf1a88b6::t_1dca1f1d1622da 2469
+src/models/longcat-flash.cpp
+  s_4da79edf1a88b6::t_49a024fab1c247 1-69,75-78,81-136,138-174,176,178-363,367-446
+  s_4da79edf1a88b6::t_a48660ec556c58 364-366
+  s_4da79edf1a88b6::t_bf8ce3998f491c 70-74,79-80
+  s_4da79edf1a88b6::t_f02fa4c09b1a84 175,177
+  s_4da79edf1a88b6::t_058196e3792362 137
+gguf-py/gguf/constants.py
+  s_4da79edf1a88b6::t_3223d0d129768c 3132-3156
+  s_4da79edf1a88b6::t_e69d18f29a00ef 1065
+  s_4da79edf1a88b6::t_8b2d5df1ef5daf 481
+  s_4da79edf1a88b6::t_4c30d7a33ad5c8 1281-1282
+  s_4da79edf1a88b6::t_74ad94d1229b40 698-699
+src/llama-arch.h
+  s_4da79edf1a88b6::t_88f84d9ae85115 84
+  s_4da79edf1a88b6::t_8a9465c86d3754 207-209
+  s_4da79edf1a88b6::t_0f3f2d492fe882 526-527
+src/llama-kv-cells.h
+  s_4da79edf1a88b6::t_65d6556248e0d7 30-31
+  s_4da79edf1a88b6::t_91975d742053c2 18-20
+src/models/models.h
+  s_4da79edf1a88b6::t_1a70a77503346b 1075-1087
+  s_4da79edf1a88b6::t_f0b241c049c12e 1072-1074
+  s_4da79edf1a88b6::t_14edc22761e3de 1071
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "fb041f75fdc7491be1d59197b74ec90b8bcbc7fc",
+  "prompts": {},
+  "sessions": {
+    "s_4da79edf1a88b6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b12c1b5a-69b6-4678-a254-9674bb274570",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Jackson57279 <otdoges@proton.me>"
+    }
+  }
+}
