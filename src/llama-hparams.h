@@ -90,6 +90,9 @@ struct llama_hparams {
     uint32_t n_ff_shexp         = 0;
     uint32_t n_ff_chexp         = 0;
     uint32_t n_expert_shared    = 0;
+    uint32_t n_expert_zero      = 0; // longcat-flash zero-computation (identity) experts
+    uint32_t n_ngram_neighbors  = 0; // longcat-flash n-gram embeddings
+    uint32_t n_ngram_splits     = 0;
     uint32_t n_norm_groups      = 0;
     uint32_t n_expert_groups    = 0;
     uint32_t n_group_used       = 0;

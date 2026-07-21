@@ -15,6 +15,9 @@ struct llama_kv_cell_ext {
     llama_pos x = 0;
     llama_pos y = 0;
 
+    // token id stored in this cell (-1 if unknown), used by longcat-flash n-gram embeddings
+    llama_token tok = -1;
+
     // return true if the current 2D spatial position is greater than other
     bool is_2d_gt(llama_pos ox, llama_pos oy) const {
         return (y > oy) || (y == oy && x > ox);
@@ -24,6 +27,8 @@ struct llama_kv_cell_ext {
         static_assert(std::is_trivially_copyable_v<llama_kv_cell_ext>);
 
         memset(this, 0, sizeof(*this));
+
+        tok = -1;
     }
 };
 

@@ -678,6 +678,24 @@ llama_pos llama_kv_cache::seq_pos_max(llama_seq_id seq_id) const {
     return cells.seq_pos_max(seq_id);
 }
 
+llama_token llama_kv_cache::seq_token_at(llama_seq_id seq_id, llama_pos pos) const {
+    if (other) {
+        return other->seq_token_at(seq_id, pos);
+    }
+
+    GGML_ASSERT(seq_id >= 0 && (size_t) seq_id < seq_to_stream.size());
+
+    const auto & cells = v_cells[seq_to_stream[seq_id]];
+
+    for (uint32_t i = 0; i < cells.size(); ++i) {
+        if (!cells.is_empty(i) && cells.seq_has(i, seq_id) && cells.pos_get(i) == pos) {
+            return cells.ext_get(i).tok;
+        }
+    }
+
+    return -1;
+}
+
 std::map<ggml_backend_buffer_type_t, size_t> llama_kv_cache::memory_breakdown() const {
     std::map<ggml_backend_buffer_type_t, size_t> ret;
     for (const auto & [ctx, buf] : ctxs_bufs) {
@@ -1126,11 +1144,13 @@ void llama_kv_cache::apply_ubatch(const slot_info & sinfo, const llama_ubatch & 
 
             cells.pos_set(idx, ubatch.pos[i]);
 
-            if (ubatch.is_pos_2d()) {
-                llama_kv_cell_ext ext {
-                    /*.x =*/ ubatch.pos[i + ubatch.n_tokens*2],
-                    /*.y =*/ ubatch.pos[i + ubatch.n_tokens],
-                };
+            {
+                llama_kv_cell_ext ext;
+                if (ubatch.is_pos_2d()) {
+                    ext.x = ubatch.pos[i + ubatch.n_tokens*2];
+                    ext.y = ubatch.pos[i + ubatch.n_tokens];
+                }
+                ext.tok = ubatch.token ? ubatch.token[i] : -1;
                 cells.ext_set(idx, ext);
             }
 
@@ -2565,6 +2585,10 @@ const llama_ubatch & llama_kv_cache_context::get_ubatch() const {
 
 uint32_t llama_kv_cache_context::get_n_kv() const {
     return n_kv;
+}
+
+llama_token llama_kv_cache_context::seq_token_at(llama_seq_id seq_id, llama_pos pos) const {
+    return kv->seq_token_at(seq_id, pos);
 }
 
 ggml_type llama_kv_cache_context::type_k() const {

@@ -180,6 +180,8 @@ static llama_model * llama_model_mapping(llm_arch arch, const llama_model_params
             return new llama_model_deepseek2(params);
         case LLM_ARCH_DEEPSEEK2OCR:
             return new llama_model_deepseek2ocr(params);
+        case LLM_ARCH_LONGCAT_FLASH:
+            return new llama_model_longcat_flash(params);
         case LLM_ARCH_DEEPSEEK32:
             return new llama_model_deepseek32(params);
         case LLM_ARCH_DEEPSEEK4:
@@ -2464,6 +2466,7 @@ llama_rope_type llama_model_rope_type(const llama_model * model) {
         case LLM_ARCH_DEEPSEEK:
         case LLM_ARCH_DEEPSEEK2:
         case LLM_ARCH_DEEPSEEK2OCR:
+        case LLM_ARCH_LONGCAT_FLASH:
         case LLM_ARCH_DEEPSEEK32:
         case LLM_ARCH_DEEPSEEK4:
         case LLM_ARCH_PLM:

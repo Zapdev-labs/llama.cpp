@@ -315,6 +315,13 @@ struct llm_tokenizer_bpe : llm_tokenizer {
                     "\\p{N}+",
                 };
                 break;
+            case LLAMA_VOCAB_PRE_TYPE_LONGCAT:
+                regex_exprs = {
+                    "(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+",
+                    " ?[！-／：-～‘-‟　-。《》「」【】]+",
+                    "[一-龥ࠀ-一가-퟿]+",
+                };
+                break;
             case LLAMA_VOCAB_PRE_TYPE_DEEPSEEK3_LLM:
             case LLAMA_VOCAB_PRE_TYPE_HUNYUAN_DENSE:
             case LLAMA_VOCAB_PRE_TYPE_JOYAI_LLM:
@@ -2136,6 +2143,9 @@ void llama_vocab::impl::load(llama_model_loader & ml, const LLM_KV & kv) {
             } else if (
                     tokenizer_pre == "deepseek-llm") {
                 pre_type = LLAMA_VOCAB_PRE_TYPE_DEEPSEEK_LLM;
+            } else if (
+                    tokenizer_pre == "longcat") {
+                pre_type = LLAMA_VOCAB_PRE_TYPE_LONGCAT;
                 clean_spaces = false;
             } else if (
                     tokenizer_pre == "deepseek-coder") {

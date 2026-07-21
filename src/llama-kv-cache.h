@@ -142,6 +142,9 @@ public:
     llama_pos seq_pos_min(llama_seq_id seq_id) const override;
     llama_pos seq_pos_max(llama_seq_id seq_id) const override;
 
+    // token stored at (seq_id, pos), or -1 if not present (longcat-flash n-gram embeddings)
+    llama_token seq_token_at(llama_seq_id seq_id, llama_pos pos) const;
+
     std::map<ggml_backend_buffer_type_t, size_t> memory_breakdown() const override;
 
     // state write/load
@@ -363,6 +366,8 @@ public:
     //
 
     uint32_t get_n_kv() const;
+
+    llama_token seq_token_at(llama_seq_id seq_id, llama_pos pos) const;
 
     ggml_type type_k() const;
     ggml_type type_v() const;

@@ -1072,6 +1072,23 @@ struct llama_model_deepseek2 : public llama_model_base {
 };
 
 
+struct llama_model_longcat_flash : public llama_model_base {
+    llama_model_longcat_flash(const struct llama_model_params & params) : llama_model_base(params) {}
+    void load_arch_hparams(llama_model_loader & ml) override;
+    void load_arch_tensors(llama_model_loader & ml) override;
+
+    // n-gram hash embedding tables and their output projections, n_ngram_splits*(n_ngram_neighbors-1) of each
+    std::vector<ggml_tensor *> ngram_embd;
+    std::vector<ggml_tensor *> ngram_proj;
+
+    struct graph : public llm_graph_context {
+        graph(const llama_model_longcat_flash & model, const llm_graph_params & params);
+    };
+
+    std::unique_ptr<llm_graph_context> build_arch_graph(const llm_graph_params & params) const override;
+};
+
+
 struct llama_model_deepseek32 : public llama_model_base {
     llama_model_deepseek32(const struct llama_model_params & params) : llama_model_base(params) {}
     void load_arch_hparams(llama_model_loader & ml) override;
