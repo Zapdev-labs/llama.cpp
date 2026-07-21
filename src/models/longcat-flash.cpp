@@ -132,6 +132,11 @@ public:
         }
     }
 
+    bool can_reuse(const llm_graph_params & params) override {
+        this->mctx = static_cast<const llama_kv_cache_context *>(params.mctx);
+        return tokens && tokens->ne[0] == params.ubatch.n_tokens && params.ubatch.token;
+    }
+
     void set_input(const llama_ubatch * ubatch) override {
         const uint32_t n_tokens = ubatch->n_tokens;
         const uint32_t n_embdrs = (uint32_t) rows.size();
