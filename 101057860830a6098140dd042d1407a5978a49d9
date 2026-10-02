@@ -1,0 +1,21 @@
+ggml/src/ggml-vulkan/ggml-vulkan.cpp
+  s_87026fb8143657::t_0926b4aa9accac 5624-5625
+ggml/src/ggml-vulkan/vulkan-shaders/unary.comp
+  s_87026fb8143657::t_8ff6371d71d552 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "101057860830a6098140dd042d1407a5978a49d9",
+  "prompts": {},
+  "sessions": {
+    "s_87026fb8143657": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "babceff5-66d3-4ba5-8985-dbb58a47eab9",
+        "model": "grok-4.6"
+      },
+      "human_author": "Jackson57279 <otdoges@proton.me>"
+    }
+  }
+}

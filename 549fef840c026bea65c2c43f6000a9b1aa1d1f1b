@@ -1,0 +1,19 @@
+ggml/src/ggml-vulkan/vulkan-shaders/mul_mat_vec_q6_k.comp
+  s_87026fb8143657::t_f2109d94f81a67 9,16-22,24-26,28-29,63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "549fef840c026bea65c2c43f6000a9b1aa1d1f1b",
+  "prompts": {},
+  "sessions": {
+    "s_87026fb8143657": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "babceff5-66d3-4ba5-8985-dbb58a47eab9",
+        "model": "grok-4.6"
+      },
+      "human_author": "Jackson57279 <otdoges@proton.me>"
+    }
+  }
+}

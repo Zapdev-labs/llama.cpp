@@ -1,0 +1,19 @@
+ggml/src/ggml-vulkan/ggml-vulkan.cpp
+  s_87026fb8143657::t_2087473877823a 3741
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "d4b7f2c7fbb18fe68c1dc9550acf583a01b969d8",
+  "prompts": {},
+  "sessions": {
+    "s_87026fb8143657": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "babceff5-66d3-4ba5-8985-dbb58a47eab9",
+        "model": "grok-4.6"
+      },
+      "human_author": "Jackson57279 <otdoges@proton.me>"
+    }
+  }
+}
