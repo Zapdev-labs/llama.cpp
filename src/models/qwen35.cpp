@@ -649,7 +649,25 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
     ggml_tensor * head_w = layer.nextn.shared_head_head ? layer.nextn.shared_head_head : model.output;
     ggml_tensor * head_s = layer.nextn.shared_head_head ? layer.nextn.shared_head_head_s : model.output_s;
     GGML_ASSERT(head_w && "QWEN35 MTP: missing LM head (nextn.shared_head_head or model.output)");
-    cur = build_lora_mm(head_w, cur, head_s);
+
+    // LLAMA_DRAFT_HEAD_K=K: draft only over the first K token ids (low ids are the frequent BPE tokens; 100k
+    // covers ~99.9% of text). The other logits are set to -1e4 so they are never drafted. Saves most of the
+    // head's weight reads per draft token; the target still verifies with the full vocabulary.
+    static const int64_t head_k = [] {
+        const char * env = getenv("LLAMA_DRAFT_HEAD_K");
+        return env ? (int64_t) atoll(env) : (int64_t) 0;
+    }();
+    const int64_t n_vocab_head = head_w->ne[1];
+    if (head_k > 0 && head_k < n_vocab_head && head_s == nullptr) {
+        constexpr float big = 1e4f;
+        ggml_tensor * head_w_k = ggml_view_2d(ctx0, head_w, head_w->ne[0], head_k, head_w->nb[1], 0);
+        cur = build_lora_mm(head_w_k, cur, nullptr);
+        cur = ggml_scale_bias(ctx0, cur, 1.0f, big);
+        cur = ggml_pad(ctx0, cur, (int) (n_vocab_head - head_k), 0, 0, 0);
+        cur = ggml_scale_bias(ctx0, cur, 1.0f, -big);
+    } else {
+        cur = build_lora_mm(head_w, cur, head_s);
+    }
     cb(cur, "result_output", -1);
 
     res->t_logits = cur;
