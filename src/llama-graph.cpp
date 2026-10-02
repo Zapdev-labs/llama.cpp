@@ -44,6 +44,11 @@ static ggml_tensor * build_attn_inp_kq_mask(
     return res;
 }
 
+static bool llm_graph_rs_main_identity(const llama_memory_recurrent_context * mctx, uint32_t n_seqs) {
+    static const bool disabled = getenv("LLAMA_RS_NO_VIEW") != nullptr;
+    return !disabled && mctx->s_copy_main_is_identity(n_seqs);
+}
+
 static bool can_reuse_kq_mask(
         ggml_tensor * kq_mask,
         const llama_kv_cache_context * mctx,
@@ -355,6 +360,7 @@ bool llm_graph_input_rs::can_reuse(const llm_graph_params & params) {
 
     res &= head == mctx->get_head();
     res &= rs_z == mctx->get_rs_z();
+    res &= main_identity == llm_graph_rs_main_identity(mctx, params.ubatch.n_seqs);
 
     return res;
 }
@@ -1105,6 +1111,7 @@ bool llm_graph_input_mem_hybrid::can_reuse(const llm_graph_params & params) {
 
     res &= inp_rs->head == mctx->get_recr()->get_head();
     res &= inp_rs->rs_z == mctx->get_recr()->get_rs_z();
+    res &= inp_rs->main_identity == llm_graph_rs_main_identity(mctx->get_recr(), params.ubatch.n_seqs);
 
     return res;
 }
@@ -1148,6 +1155,7 @@ bool llm_graph_input_mem_hybrid_k::can_reuse(const llm_graph_params & params) {
 
     res &= inp_rs->head == mctx->get_recr()->get_head();
     res &= inp_rs->rs_z == mctx->get_recr()->get_rs_z();
+    res &= inp_rs->main_identity == llm_graph_rs_main_identity(mctx->get_recr(), params.ubatch.n_seqs);
 
     return res;
 }
@@ -1236,6 +1244,7 @@ bool llm_graph_input_mem_hybrid_iswa::can_reuse(const llm_graph_params & params)
 
     res &= inp_rs->head == mctx->get_recr()->get_head();
     res &= inp_rs->rs_z == mctx->get_recr()->get_rs_z();
+    res &= inp_rs->main_identity == llm_graph_rs_main_identity(mctx->get_recr(), params.ubatch.n_seqs);
 
     return res;
 }
@@ -3351,7 +3360,8 @@ ggml_tensor * llm_graph_context::build_rs(
            uint32_t   rs_head,
            uint32_t   rs_size,
             int32_t   rs_zero,
-        const llm_graph_get_rows_fn & get_state_rows) const {
+        const llm_graph_get_rows_fn & get_state_rows,
+               bool   main_identity) const {
 
     GGML_UNUSED(rs_size);
     ggml_tensor * states = ggml_reshape_2d(ctx0, s, state_size, s->ne[1]);
@@ -3359,12 +3369,17 @@ ggml_tensor * llm_graph_context::build_rs(
     // Clear a single state which will then be copied to the other cleared states.
     // Note that this is a no-op when the view is zero-sized.
     ggml_tensor * state_zero = ggml_view_1d(ctx0, states, state_size*(rs_zero >= 0), rs_zero*states->nb[1]*(rs_zero >= 0));
-    ggml_build_forward_expand(gf, ggml_scale_inplace(ctx0, state_zero, 0));
+    ggml_build_forward_expand(gf, s->type == GGML_TYPE_F32
+            ? ggml_scale_inplace(ctx0, state_zero, 0)
+            : ggml_fill_inplace (ctx0, state_zero, 0.0f));
 
     // copy states
     // NOTE: assuming the copy destinations are ALL contained between rs_head and rs_head + n_rs
     // {state_size, rs_size} -> {state_size, n_seqs}
-    ggml_tensor * output_states = get_state_rows(ctx0, states, state_copy_main);
+    // when every sequence reads its own cell, use the cache rows in place (saves a full read + write of the states)
+    ggml_tensor * output_states = main_identity
+        ? ggml_view_2d(ctx0, states, state_size, n_seqs, states->nb[1], rs_head*states->nb[1])
+        : get_state_rows(ctx0, states, state_copy_main);
     ggml_build_forward_expand(gf, output_states);
 
     // copy extra states which won't be changed further (between n_seqs and n_rs)
@@ -3396,6 +3411,8 @@ static std::unique_ptr<llm_graph_input_rs> build_rs_inp_impl(
     inp->head = mctx_cur->get_head();
     inp->rs_z = mctx_cur->get_rs_z();
 
+    inp->main_identity = llm_graph_rs_main_identity(mctx_cur, n_seqs);
+
     return inp;
 }
 
@@ -3417,7 +3434,7 @@ ggml_tensor * llm_graph_context::build_rs(
 
     return build_rs(s, inp->s_copy_main, inp->s_copy_extra, state_size, n_seqs,
                     kv_state->get_n_rs(), kv_state->get_head(), kv_state->get_size(), kv_state->get_rs_z(),
-                    get_state_rows);
+                    get_state_rows, inp->main_identity);
 }
 
 ggml_tensor * llm_graph_context::build_rwkv_token_shift_load(

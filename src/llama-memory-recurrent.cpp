@@ -1243,6 +1243,22 @@ ggml_tensor * llama_memory_recurrent_context::get_s_l(int32_t il) const {
     return mem->s_l[il];
 }
 
+bool llama_memory_recurrent_context::s_copy_main_is_identity(uint32_t n_seqs) const {
+    // with rollback snapshots (speculative decoding) the mapping flips between identity and gather after
+    // every partially accepted draft; switching graph topology each step costs far more (graph rebuild,
+    // CUDA graph re-capture) than the gather saves, so keep the gather there
+    if (mem->n_rs_seq > 0) {
+        return false;
+    }
+    for (uint32_t i = 0; i < n_seqs; ++i) {
+        const uint32_t cell_idx = i + mem->head;
+        if (mem->cells[cell_idx].src0 != (int32_t) cell_idx) {
+            return false;
+        }
+    }
+    return true;
+}
+
 int32_t llama_memory_recurrent_context::s_copy(int i) const {
     const uint32_t cell_idx = i + mem->head;
     const int32_t  src0     = mem->cells[cell_idx].src0;

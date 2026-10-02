@@ -277,6 +277,9 @@ public:
     // used in view offsets, need to match for valid graph reuse
     uint32_t head;
     int32_t rs_z;
+
+    // s_copy_main is the identity: read the states in place instead of gathering them
+    bool main_identity = false;
 };
 
 class llm_graph_input_cross_embd : public llm_graph_input_i {
@@ -1279,7 +1282,8 @@ struct llm_graph_context {
                uint32_t   rs_head,
                uint32_t   rs_size,
                 int32_t   rs_zero,
-            const llm_graph_get_rows_fn & get_state_rows = ggml_get_rows) const;
+            const llm_graph_get_rows_fn & get_state_rows = ggml_get_rows,
+                   bool   main_identity = false) const;
 
     llm_graph_input_rs * build_rs_inp() const;
 
