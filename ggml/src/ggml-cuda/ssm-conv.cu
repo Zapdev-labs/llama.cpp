@@ -1,6 +1,7 @@
 #include "common.cuh"
 #include "ssm-conv.cuh"
 #include "unary.cuh"
+#include "convert.cuh"
 
 template <bool apply_silu, size_t split_d_inner, size_t d_conv>
 static __global__ void ssm_conv_f32(const float * src0_ptr, const float * src1_ptr,
@@ -202,5 +203,68 @@ void ggml_cuda_op_ssm_conv(ggml_backend_cuda_context & ctx, ggml_tensor * dst, g
     } else {
         ssm_conv_f32_cuda<false>(src0_d, src1_d, bias_d, src0->nb[0], src0->nb[1], src0->nb[2], src1->nb[1], dst_d, out->nb[0], out->nb[1],
                           out->nb[2], nc, nr, n_t, n_s, stream);
+    }
+}
+
+// decode (one token per sequence) with d_conv == 4: fuses
+//   concat(conv_state, x) -> cpy(last 3 columns -> conv_state cache) -> ssm_conv -> [silu]
+// conv_state: [3, nr, n_s] f32, rows contiguous per channel; x: element (r, s) at x + r*x_nb1 + s*x_nb2
+template <typename st_in_t, typename st_out_t>
+static __global__ void ssm_conv_state_update_f32(
+        const st_in_t * conv_state, const char * x, const float * w, st_out_t * state_out, float * dst,
+        const int nr, const int64_t x_nb1, const int64_t x_nb2, const int w_stride,
+        const int64_t state_out_stride, const int64_t dst_stride, const bool apply_silu) {
+    const int r = blockIdx.x * blockDim.x + threadIdx.x;
+    const int s = blockIdx.y;
+    if (r >= nr) {
+        return;
+    }
+
+    const st_in_t * st = conv_state + ((int64_t) s * nr + r) * 3;
+    const float x0 = ggml_cuda_cast<float>(st[0]);
+    const float x1 = ggml_cuda_cast<float>(st[1]);
+    const float x2 = ggml_cuda_cast<float>(st[2]);
+    const float x3 = *(const float *) (x + r * x_nb1 + s * x_nb2);
+
+    const float * wr = w + (int64_t) r * w_stride;
+    float sumf = x0 * wr[0] + x1 * wr[1] + x2 * wr[2] + x3 * wr[3];
+
+    st_out_t * so = state_out + s * state_out_stride + (int64_t) r * 3;
+    so[0] = ggml_cuda_cast<st_out_t>(x1);
+    so[1] = ggml_cuda_cast<st_out_t>(x2);
+    so[2] = ggml_cuda_cast<st_out_t>(x3);
+
+    dst[s * dst_stride + r] = apply_silu ? ggml_cuda_op_silu_single(sumf) : sumf;
+}
+
+void ggml_cuda_op_ssm_conv_state_update(ggml_backend_cuda_context & ctx, const ggml_tensor * concat,
+        const ggml_tensor * cpy_dst, const ggml_tensor * conv, ggml_tensor * out, bool apply_silu,
+        const ggml_tensor * conv_state_src) {
+    const ggml_tensor * conv_state = conv_state_src ? conv_state_src : concat->src[0]; // [3, nr, n_s], f32 or f16
+    const ggml_tensor * x          = concat->src[1]; // [1, nr, n_s]
+    const ggml_tensor * w          = conv->src[1];   // [4, nr]
+
+    const int     nr  = conv_state->ne[1];
+    const int64_t n_s = conv_state->ne[2];
+
+    const int block = 256;
+    const dim3 grid((nr + block - 1) / block, n_s, 1);
+    auto launch = [&](auto st_in, auto st_out) {
+        ssm_conv_state_update_f32<<<grid, block, 0, ctx.stream()>>>(
+            st_in, (const char *) x->data, (const float *) w->data, st_out, (float *) out->data,
+            nr, x->nb[1], x->nb[2], w->nb[1] / sizeof(float),
+            cpy_dst->nb[1] / ggml_type_size(cpy_dst->type), out->nb[2] / sizeof(float), apply_silu);
+    };
+    auto launch_in = [&](auto st_out) {
+        if (conv_state->type == GGML_TYPE_F16) {
+            launch((const half *) conv_state->data, st_out);
+        } else {
+            launch((const float *) conv_state->data, st_out);
+        }
+    };
+    if (cpy_dst->type == GGML_TYPE_F16) {
+        launch_in((half *) cpy_dst->data);
+    } else {
+        launch_in((float *) cpy_dst->data);
     }
 }

@@ -177,6 +177,9 @@ public:
 
     int32_t s_copy(int i) const;
 
+    // true when the first n_seqs cells read their state from themselves (no copy needed)
+    bool s_copy_main_is_identity(uint32_t n_seqs) const;
+
 private:
     const llama_memory_status status;
 

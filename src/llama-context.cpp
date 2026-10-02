@@ -28,6 +28,7 @@ static llm_graph_type ctx_type_to_graph_type(llama_context_type ctx_type) {
     switch (ctx_type) {
         case LLAMA_CONTEXT_TYPE_DEFAULT: return LLM_GRAPH_TYPE_DEFAULT;
         case LLAMA_CONTEXT_TYPE_MTP    : return LLM_GRAPH_TYPE_DECODER_MTP;
+        case LLAMA_CONTEXT_TYPE_OPT    : return LLM_GRAPH_TYPE_DEFAULT;
     }
     throw std::runtime_error("Unsupported ctx type");
 }
@@ -2333,6 +2334,12 @@ uint32_t llama_context::graph_max_nodes(uint32_t n_tokens) const {
         }
     }
 
+    // training (ggml_opt) backward graphs contain significantly more nodes than the forward
+    // graphs used to size the scheduler; grow the reservation to cover backward+optimizer graphs
+    if (cparams.ctx_type == LLAMA_CONTEXT_TYPE_OPT) {
+        res *= 6;
+    }
+
     uint32_t n_sampling_nodes = 0;
     uint32_t n_sampling_nodes_max = 0;
     for (const auto & [seq_id, sampler] : sampling.samplers) {
@@ -3529,7 +3536,9 @@ void llama_context::opt_epoch_iter(
             struct ggml_context * ctx_compute_opt;
             {
                 const size_t size_gf = ggml_graph_size(gf);
-                const size_t size_meta = 4*size_gf*ggml_tensor_overhead() + 2*ggml_graph_overhead_custom(size_gf, /*grads = */ true);
+                // backward expansion can create significantly more nodes than the forward pass (esp. with SET_ROWS backward),
+                // use a generous multiplier to avoid overflowing the compute context
+                const size_t size_meta = 8*size_gf*ggml_tensor_overhead() + 4*ggml_graph_overhead_custom(size_gf, /*grads = */ true);
                 struct ggml_init_params params = {
                     /*.mem_size   =*/ size_meta,
                     /*.mem_buffer =*/ nullptr,

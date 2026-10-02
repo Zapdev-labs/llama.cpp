@@ -12,6 +12,11 @@
 #include <string>
 #include <vector>
 
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_IX86) || defined(_M_X64)
+extern "C" void ggml_vec_dot_iq1_xxxs_q8_K_generic(int n, float * s, size_t bs,
+        const void * vx, size_t bx, const void * vy, size_t by, int nrc);
+#endif
+
 #if defined(_MSC_VER)
 #pragma warning(disable: 4244 4267) // possible loss of data
 #endif
@@ -243,6 +248,45 @@ static int test_vec_dot_q(bool verbose) {
     return num_failed;
 }
 
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_IX86) || defined(_M_X64)
+static int test_iq1_xxxs_vec_dot_matches_generic(bool verbose) {
+    const size_t test_size = 32 * 128;
+    const auto * iq1 = ggml_get_type_traits_cpu(GGML_TYPE_IQ1_XXXS);
+    const auto * q8 = ggml_get_type_traits_cpu(iq1->vec_dot_type);
+    std::vector<float> activations(test_size);
+    std::vector<uint8_t> quant_weights(ggml_row_size(GGML_TYPE_IQ1_XXXS, test_size));
+    std::vector<uint8_t> quant_activations(2 * test_size);
+
+    generate_data(1.75f, test_size, activations.data());
+    for (size_t block = 0; block < test_size / 256; ++block) {
+        uint8_t * data = quant_weights.data() + 38 * block;
+        data[0] = 0x00;
+        data[1] = 0x3c;
+        for (size_t i = 0; i < 32; ++i) {
+            data[2 + i] = (uint8_t)(block * 37 + i * 11 + 3);
+        }
+        for (size_t i = 0; i < 4; ++i) {
+            data[34 + i] = (uint8_t)(((2 * i + 1) << 4) | (2 * i));
+        }
+    }
+    q8->from_float(activations.data(), quant_activations.data(), test_size);
+
+    float optimized = 0.0f;
+    float generic = 0.0f;
+    iq1->vec_dot(test_size, &optimized, 0, quant_weights.data(), 0,
+                 quant_activations.data(), 0, 1);
+    ggml_vec_dot_iq1_xxxs_q8_K_generic(test_size, &generic, 0,
+                                       quant_weights.data(), 0,
+                                       quant_activations.data(), 0, 1);
+    const bool failed = fabsf(optimized - generic) > 1e-5f;
+    if (failed || verbose) {
+        printf("iq1_xxxs optimized vs generic:        %s (generic=%f optimized=%f)\n",
+               RESULT_STR[failed], generic, optimized);
+    }
+    return failed;
+}
+#endif
+
 int main(int argc, char * argv[]) {
     bool verbose = false;
 
@@ -264,6 +308,9 @@ int main(int argc, char * argv[]) {
 
     num_failed += test_vec_dot_f32(verbose);
     num_failed += test_vec_dot_q(verbose);
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_IX86) || defined(_M_X64)
+    num_failed += test_iq1_xxxs_vec_dot_matches_generic(verbose);
+#endif
 
     if (num_failed || verbose) {
         printf("%d tests failed\n", num_failed);

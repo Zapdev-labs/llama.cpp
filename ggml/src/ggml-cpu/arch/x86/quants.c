@@ -3710,6 +3710,51 @@ void ggml_vec_dot_iq1_s_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const vo
 #endif
 }
 
+void ggml_vec_dot_iq1_xxxs_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc) {
+    assert(n % QK_K == 0);
+    assert(nrc == 1);
+    UNUSED(nrc);
+    UNUSED(bx);
+    UNUSED(by);
+    UNUSED(bs);
+
+#if defined __AVX2__
+    const block_iq1_xxxs * GGML_RESTRICT x = vx;
+    const block_q8_K     * GGML_RESTRICT y = vy;
+    const int nb = n / QK_K;
+    float sumf = 0;
+
+    for (int i = 0; i < nb; ++i) {
+        __m256i sumi = _mm256_setzero_si256();
+        int correction = 0;
+        int sumi1 = 0;
+        for (int ib = 0; ib < QK_K/32; ++ib) {
+            const uint8_t * qs = x[i].qs + 4*ib;
+            const int nib = (x[i].sc[ib/2] >> (4*(ib & 1))) & 0xf;
+            const int ls = 2*(nib & 7) + 1;
+            const __m256i q1 = _mm256_set_epi64x(iq1_xxxs_grid[qs[3]], iq1_xxxs_grid[qs[2]],
+                                                 iq1_xxxs_grid[qs[1]], iq1_xxxs_grid[qs[0]]);
+            const __m256i q8 = _mm256_loadu_si256((const __m256i *)(y[i].qs + 32*ib));
+#if defined(__AVX512VNNI__) && defined(__AVX512VL__)
+            const __m256i q1u = _mm256_add_epi8(q1, _mm256_set1_epi8(1));
+            const __m256i dot = _mm256_dpbusd_epi32(_mm256_setzero_si256(), q1u, q8);
+            sumi = _mm256_add_epi32(sumi, _mm256_mullo_epi32(dot, _mm256_set1_epi32(ls)));
+            correction += ls * (y[i].bsums[2*ib] + y[i].bsums[2*ib + 1]);
+#else
+            const __m256i dot = mul_add_epi8(q1, q8);
+            sumi = _mm256_add_epi32(sumi, _mm256_madd_epi16(dot, _mm256_set1_epi16(ls)));
+#endif
+            sumi1 += ls * (nib & 8 ? -1 : 1) * (y[i].bsums[2*ib] + y[i].bsums[2*ib + 1]);
+        }
+        const float d = GGML_CPU_FP16_TO_FP32(x[i].d) * y[i].d;
+        sumf += d * (hsum_i32_8(sumi) - correction + IQ1S_DELTA * sumi1);
+    }
+    *s = sumf;
+#else
+    ggml_vec_dot_iq1_xxxs_q8_K_generic(n, s, bs, vx, bx, vy, by, nrc);
+#endif
+}
+
 void ggml_vec_dot_iq1_m_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc) {
     assert(n % QK_K == 0);
     assert(nrc == 1);

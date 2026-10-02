@@ -64,7 +64,11 @@ llama_model_qwen3::graph::graph(const llama_model & model, const llm_graph_param
     // inp_pos - contains the positions
     ggml_tensor * inp_pos = build_inp_pos();
 
-    auto * inp_attn = build_attn_inp_kv();
+    // for training/finetuning use no-cache attention so gradients flow directly
+    // through q/k/v without scattering through the KV cache
+    const bool opt_no_cache = cparams.ctx_type == LLAMA_CONTEXT_TYPE_OPT;
+    auto * inp_attn_kv      = opt_no_cache ? nullptr : build_attn_inp_kv();
+    auto * inp_attn_nocache = opt_no_cache ? build_attn_inp_no_cache() : nullptr;
 
     ggml_tensor * inp_out_ids = build_inp_out_ids();
 
@@ -107,9 +111,15 @@ llama_model_qwen3::graph::graph(const llama_model & model, const llm_graph_param
             cb(Kcur, "Kcur", il);
             cb(Vcur, "Vcur", il);
 
-            cur = build_attn(inp_attn,
-                    model.layers[il].wo, model.layers[il].wo_b, model.layers[il].wo_s,
-                    Qcur, Kcur, Vcur, nullptr, nullptr, nullptr, 1.0f/sqrtf(float(n_embd_head)), il);
+            if (opt_no_cache) {
+                cur = build_attn(inp_attn_nocache,
+                        model.layers[il].wo, model.layers[il].wo_b, model.layers[il].wo_s,
+                        Qcur, Kcur, Vcur, nullptr, nullptr, nullptr, 1.0f/sqrtf(float(n_embd_head)), il);
+            } else {
+                cur = build_attn(inp_attn_kv,
+                        model.layers[il].wo, model.layers[il].wo_b, model.layers[il].wo_s,
+                        Qcur, Kcur, Vcur, nullptr, nullptr, nullptr, 1.0f/sqrtf(float(n_embd_head)), il);
+            }
         }
         if (il == n_layer - 1 && inp_out_ids) {
             cur   = ggml_get_rows(ctx0,   cur, inp_out_ids);

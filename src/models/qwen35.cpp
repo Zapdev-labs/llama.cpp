@@ -355,6 +355,11 @@ ggml_tensor * llama_model_qwen35::graph::build_layer_attn_linear(
     ggml_tensor * qkv_mixed = qkvz.first;
     ggml_tensor * z         = qkvz.second;
 
+    // schedule qkv and z (same input) up front so they do not land inside the conv-state update or the
+    // gated norm at the end of the layer (both are fused by backends when their nodes are adjacent)
+    ggml_build_forward_expand(gf, qkv_mixed);
+    ggml_build_forward_expand(gf, z);
+
     ggml_tensor * beta = build_lora_mm(model.layers[il].ssm_beta, cur, model.layers[il].ssm_beta_s);
     beta = ggml_reshape_4d(ctx0, beta, 1, num_v_heads, n_seq_tokens, n_seqs);
     cb(beta, "beta", il);
@@ -375,6 +380,10 @@ ggml_tensor * llama_model_qwen35::graph::build_layer_attn_linear(
 
     gate = ggml_reshape_4d(ctx0, gate, 1, num_v_heads, n_seq_tokens, n_seqs);
 
+    // compute gate and beta up front so that the q/k l2 norms end up right before the delta net (fusable)
+    ggml_build_forward_expand(gf, gate);
+    ggml_build_forward_expand(gf, beta);
+
     ggml_tensor * conv_states_all = mctx_cur->get_r_l(il);
     ggml_tensor * ssm_states_all  = mctx_cur->get_s_l(il);
 
@@ -384,15 +393,18 @@ ggml_tensor * llama_model_qwen35::graph::build_layer_attn_linear(
 
     ggml_tensor * conv_input = build_conv_state(inp, conv_states_all, qkv_mixed, conv_kernel_size, conv_channels, il);
 
-    ggml_tensor * state = build_rs(inp, ssm_states_all, hparams.n_embd_s(), n_seqs);
-    state = ggml_reshape_4d(ctx0, state, head_v_dim, head_v_dim, num_v_heads, n_seqs);
-    cb(state, "state_predelta", il);
-
     ggml_tensor * conv_output_proper = ggml_ssm_conv(ctx0, conv_input, conv_kernel);
     cb(conv_output_proper, "conv_output_raw", il);
 
     ggml_tensor * conv_output_silu = ggml_silu(ctx0, conv_output_proper);
     cb(conv_output_silu, "conv_output_silu", il);
+
+    // keep concat -> state cpy -> ssm_conv -> silu adjacent so backends can fuse them
+    ggml_build_forward_expand(gf, conv_output_silu);
+
+    ggml_tensor * state = build_rs(inp, ssm_states_all, hparams.n_embd_s(), n_seqs);
+    state = ggml_reshape_4d(ctx0, state, head_v_dim, head_v_dim, num_v_heads, n_seqs);
+    cb(state, "state_predelta", il);
 
     ggml_tensor * conv_qkv_mix = conv_output_silu;
 
@@ -636,7 +648,25 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
     ggml_tensor * head_w = layer.nextn.shared_head_head ? layer.nextn.shared_head_head : model.output;
     ggml_tensor * head_s = layer.nextn.shared_head_head ? layer.nextn.shared_head_head_s : model.output_s;
     GGML_ASSERT(head_w && "QWEN35 MTP: missing LM head (nextn.shared_head_head or model.output)");
-    cur = build_lora_mm(head_w, cur, head_s);
+
+    // LLAMA_DRAFT_HEAD_K=K: draft only over the first K token ids (low ids are the frequent BPE tokens; 100k
+    // covers ~99.9% of text). The other logits are set to -1e4 so they are never drafted. Saves most of the
+    // head's weight reads per draft token; the target still verifies with the full vocabulary.
+    static const int64_t head_k = [] {
+        const char * env = getenv("LLAMA_DRAFT_HEAD_K");
+        return env ? (int64_t) atoll(env) : (int64_t) 0;
+    }();
+    const int64_t n_vocab_head = head_w->ne[1];
+    if (head_k > 0 && head_k < n_vocab_head && head_s == nullptr) {
+        constexpr float big = 1e4f;
+        ggml_tensor * head_w_k = ggml_view_2d(ctx0, head_w, head_w->ne[0], head_k, head_w->nb[1], 0);
+        cur = build_lora_mm(head_w_k, cur, nullptr);
+        cur = ggml_scale_bias(ctx0, cur, 1.0f, big);
+        cur = ggml_pad(ctx0, cur, (int) (n_vocab_head - head_k), 0, 0, 0);
+        cur = ggml_scale_bias(ctx0, cur, 1.0f, -big);
+    } else {
+        cur = build_lora_mm(head_w, cur, head_s);
+    }
     cb(cur, "result_output", -1);
 
     res->t_logits = cur;

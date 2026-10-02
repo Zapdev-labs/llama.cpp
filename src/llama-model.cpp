@@ -2246,6 +2246,24 @@ ggml_tensor * llama_model::get_rope_factors(const llama_cparams & cparams, int i
     return layers[il].rope_short;
 }
 
+// LLAMA_RS_TYPE_R=f16 stores the conv (token shift) state in f16
+static ggml_type llama_recurrent_type_r() {
+    const char * env = getenv("LLAMA_RS_TYPE_R");
+    if (env != nullptr && strcmp(env, "f16") == 0) {
+        return GGML_TYPE_F16;
+    }
+    return GGML_TYPE_F32;
+}
+
+// LLAMA_RS_TYPE_S=f16 stores the recurrent (SSM / delta-net) state in f16 to halve its memory and bandwidth
+static ggml_type llama_recurrent_type_s() {
+    const char * env = getenv("LLAMA_RS_TYPE_S");
+    if (env != nullptr && strcmp(env, "f16") == 0) {
+        return GGML_TYPE_F16;
+    }
+    return GGML_TYPE_F32;
+}
+
 llama_memory_i * llama_model::create_memory(const llama_memory_params & params, const llama_cparams & cparams) const {
     llama_memory_i * res;
 
@@ -2575,8 +2593,8 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
                             /* attn_kv_size      */ cparams.n_ctx_seq,
                             /* attn_n_ubatch     */ cparams.n_ubatch,
                             /* attn_n_pad        */ 1,
-                            /* recurrent_type_r  */ GGML_TYPE_F32,
-                            /* recurrent_type_s  */ GGML_TYPE_F32,
+                            /* recurrent_type_r  */ llama_recurrent_type_r(),
+                            /* recurrent_type_s  */ llama_recurrent_type_s(),
                             /* recurrent_rs_size */ std::max((uint32_t) 1, cparams.n_seq_max),
                             /* n_seq_max         */ cparams.n_seq_max,
                             /* n_rs_seq          */ cparams.n_rs_seq,
@@ -2615,8 +2633,8 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
                             /* attn_n_pad        */ 1,
                             /* attn_n_swa        */ hparams.n_swa,
                             /* attn_swa_type     */ hparams.swa_type,
-                            /* recurrent_type_k  */ GGML_TYPE_F32,
-                            /* recurrent_type_v  */ GGML_TYPE_F32,
+                            /* recurrent_type_k  */ llama_recurrent_type_r(),
+                            /* recurrent_type_v  */ llama_recurrent_type_s(),
                             /* recurrent_kv_size */ std::max((uint32_t) 1, cparams.n_seq_max),
                             /* n_seq_max         */ cparams.n_seq_max,
                             /* n_rs_seq          */ cparams.n_rs_seq,

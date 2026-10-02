@@ -2478,6 +2478,11 @@ common_params common_base_params_to_speculative(const common_params & params) {
             result.devices           = params_spec.devices;
         }
         result.model                 = params_spec.mparams;
+        // a draft pinned to one device (-devd) does not need tensor parallelism: its many tiny ops would
+        // each pay a cross-device reduction, and tensor split also forces CPU sampling
+        if (params_spec.devices.size() == 2 && params_spec.devices[1] == nullptr && result.split_mode == LLAMA_SPLIT_MODE_TENSOR) {
+            result.split_mode = LLAMA_SPLIT_MODE_LAYER;
+        }
         result.n_gpu_layers          = params_spec.n_gpu_layers;
         result.tensor_buft_overrides = params_spec.tensor_buft_overrides;
 

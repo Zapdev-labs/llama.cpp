@@ -16,3 +16,11 @@ void ggml_cuda_op_rms_norm_fused_add(ggml_backend_cuda_context & ctx,
 void ggml_cuda_op_rms_norm_back(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
 
 void ggml_cuda_op_l2_norm(ggml_backend_cuda_context & ctx, ggml_tensor * dst);
+
+// rms_norm(x) * w * silu(g) with 128-element rows (gated norm of delta-net outputs); false if the shapes are not handled
+bool ggml_cuda_op_rms_norm_mul_silu_gate(ggml_backend_cuda_context & ctx, const ggml_tensor * rms_norm,
+        const ggml_tensor * mul_w, const ggml_tensor * silu, ggml_tensor * dst);
+
+// add -> rms_norm -> mul(w) with a contiguous per-column weight; writes both the sum and the normed output
+bool ggml_cuda_op_add_rms_norm_mul(ggml_backend_cuda_context & ctx, const ggml_tensor * add,
+        const ggml_tensor * rms_norm, ggml_tensor * mul);

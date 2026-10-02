@@ -1149,6 +1149,27 @@ struct ggml_cuda_type_traits<GGML_TYPE_IQ1_M> {
 };
 
 template<>
+struct ggml_cuda_type_traits<GGML_TYPE_IQ1_XS> {
+    static constexpr int qk = QK_K;
+    static constexpr int qr = QR1_XS;
+    static constexpr int qi = QI1_XS;
+};
+
+template<>
+struct ggml_cuda_type_traits<GGML_TYPE_IQ1_XXS> {
+    static constexpr int qk = QK_K;
+    static constexpr int qr = QR1_XXS;
+    static constexpr int qi = QI1_XXS;
+};
+
+template<>
+struct ggml_cuda_type_traits<GGML_TYPE_IQ1_XXXS> {
+    static constexpr int qk = QK_K;
+    static constexpr int qr = QR1_XXXS;
+    static constexpr int qi = QI1_XXXS;
+};
+
+template<>
 struct ggml_cuda_type_traits<GGML_TYPE_IQ4_NL> {
     static constexpr int qk = QK4_NL;
     static constexpr int qr = QR4_NL;
@@ -1452,8 +1473,58 @@ struct ggml_cuda_stream_context {
     }
 };
 
+// q8_1-quantized copy of the last MMQ src1, reused by following matmuls with the same input (e.g. q/k/v, gate/up).
+// only valid within one graph evaluation; dropped as soon as any executed node writes to src1's memory.
+struct ggml_cuda_mmq_src1_cache {
+    // identity of the cached input: data pointer + shape + strides (the tensor struct may be a temporary copy)
+    const void * data        = nullptr;
+    size_t       nbytes      = 0;
+    int64_t      ne[GGML_MAX_DIMS] = { 0 };
+    size_t       nb[GGML_MAX_DIMS] = { 0 };
+    int          ds_layout   = -1;
+    int64_t      ne10_padded = 0;
+    void *       ptr         = nullptr;
+    size_t       size        = 0;
+    ggml_cuda_pool * pool    = nullptr;
+
+    bool matches(const ggml_tensor * t) const {
+        return data != nullptr && data == t->data &&
+            std::equal(ne, ne + GGML_MAX_DIMS, t->ne) && std::equal(nb, nb + GGML_MAX_DIMS, t->nb);
+    }
+
+    void set(const ggml_tensor * t) {
+        data   = t->data;
+        nbytes = ggml_nbytes(t);
+        std::copy(t->ne, t->ne + GGML_MAX_DIMS, ne);
+        std::copy(t->nb, t->nb + GGML_MAX_DIMS, nb);
+    }
+
+    void reset() {
+        if (ptr != nullptr) {
+            pool->free(ptr, size);
+        }
+        data = nullptr;
+        ptr  = nullptr;
+        size = 0;
+    }
+
+    void invalidate_if_overlaps(const ggml_tensor * t) {
+        if (data == nullptr || t->data == nullptr) {
+            return;
+        }
+        const char * a0 = (const char *) data;
+        const char * a1 = a0 + nbytes;
+        const char * b0 = (const char *) t->data;
+        const char * b1 = b0 + ggml_nbytes(t);
+        if (b0 < a1 && a0 < b1) {
+            reset();
+        }
+    }
+};
+
 struct ggml_backend_cuda_context {
     int device;
+    ggml_cuda_mmq_src1_cache mmq_src1_cache;
     std::string name;
     cudaEvent_t copy_event = nullptr;
 

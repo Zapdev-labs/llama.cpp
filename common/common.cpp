@@ -1725,10 +1725,21 @@ struct llama_context_params common_context_params_to_llama(const common_params &
     cparams.n_outputs_max_per_seq = std::max(params.n_outputs_max_per_seq, 0);
     cparams.n_batch           = params.n_batch;
     cparams.n_ubatch          = params.n_ubatch;
+    // Hybrid GDN rollback snapshots for MTP/EAGLE must stay in one ubatch.
+    if (cparams.n_rs_seq > 0) {
+        const uint32_t need = cparams.n_rs_seq + 1;
+        if (cparams.n_ubatch < need) {
+            cparams.n_ubatch = need;
+        }
+        if (cparams.n_batch < cparams.n_ubatch) {
+            cparams.n_batch = cparams.n_ubatch;
+        }
+    }
     cparams.n_threads         = params.cpuparams.n_threads;
     cparams.n_threads_batch   = params.cpuparams_batch.n_threads == -1 ?
                                 params.cpuparams.n_threads : params.cpuparams_batch.n_threads;
     cparams.embeddings        = params.embedding;
+    cparams.ctx_type          = params.ctx_type;
     cparams.rope_scaling_type = params.rope_scaling_type;
     cparams.rope_freq_base    = params.rope_freq_base;
     cparams.rope_freq_scale   = params.rope_freq_scale;
