@@ -644,3 +644,58 @@ void ggml_cuda_op_relu_sqr(ggml_backend_cuda_context & ctx, ggml_tensor * relu_n
         unary_cuda<op_relu_sqr>((const float *)src->data, (float *)sqr_node->data, k, stream);
     }
 }
+
+// out = other * sigmoid(gate), gate read through a strided 3D view (replaces cont + sigmoid + mul)
+static __global__ void strided_sigmoid_mul_f32(const char * gate, const float * other, float * dst,
+        const int ne0, const int ne1, const int64_t nb0, const int64_t nb1, const int64_t nb2, const int64_t n) {
+    const int64_t i = (int64_t) blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) {
+        return;
+    }
+    const int64_t i0 = i % ne0;
+    const int64_t i1 = (i / ne0) % ne1;
+    const int64_t i2 = i / ((int64_t) ne0 * ne1);
+    const float g = *(const float *) (gate + i0*nb0 + i1*nb1 + i2*nb2);
+    dst[i] = other[i] * op_sigmoid(g);
+}
+
+bool ggml_cuda_op_cont_sigmoid_mul(ggml_backend_cuda_context & ctx, const ggml_tensor * cont, const ggml_tensor * sigmoid, ggml_tensor * mul) {
+    const ggml_tensor * gate  = cont->src[0];
+    const ggml_tensor * other = mul->src[0] == sigmoid ? mul->src[1] : mul->src[0];
+    if (gate->type != GGML_TYPE_F32 || other->type != GGML_TYPE_F32 || mul->type != GGML_TYPE_F32 || cont->type != GGML_TYPE_F32 ||
+        gate->ne[3] != 1 || !ggml_is_contiguous(other) || !ggml_is_contiguous(mul) || !ggml_are_same_shape(other, mul) ||
+        ggml_nelements(gate) != ggml_nelements(mul) || !ggml_are_same_shape(sigmoid, mul) || !ggml_are_same_shape(cont, sigmoid)) {
+        return false;
+    }
+    const int64_t n = ggml_nelements(mul);
+    strided_sigmoid_mul_f32<<<(n + 255) / 256, 256, 0, ctx.stream()>>>((const char *) gate->data, (const float *) other->data,
+        (float *) mul->data, gate->ne[0], gate->ne[1], gate->nb[0], gate->nb[1], gate->nb[2], n);
+    return true;
+}
+
+// out = softplus(a + b) * c with b, c broadcast along rows of ne0 (delta-net decay gate)
+static __global__ void add_softplus_mul_f32(const float * a, const float * b, const float * c, float * dst, const int ne0, const int64_t n) {
+    const int64_t i = (int64_t) blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) {
+        return;
+    }
+    const int i0 = i % ne0;
+    dst[i] = op_softplus(a[i] + b[i0]) * c[i0];
+}
+
+bool ggml_cuda_op_add_softplus_mul(ggml_backend_cuda_context & ctx, const ggml_tensor * add, const ggml_tensor * softplus, ggml_tensor * mul) {
+    const ggml_tensor * a = add->src[0];
+    const ggml_tensor * b = add->src[1];
+    const ggml_tensor * c = mul->src[0] == softplus ? mul->src[1] : mul->src[0];
+    const int64_t ne0 = a->ne[0];
+    if (a->type != GGML_TYPE_F32 || b->type != GGML_TYPE_F32 || c->type != GGML_TYPE_F32 || mul->type != GGML_TYPE_F32 ||
+        !ggml_is_contiguous(a) || !ggml_is_contiguous(b) || !ggml_is_contiguous(c) || !ggml_is_contiguous(mul) ||
+        ggml_nelements(b) != ne0 || ggml_nelements(c) != ne0 || b->ne[0] != ne0 || c->ne[0] != ne0 ||
+        !ggml_are_same_shape(a, add) || !ggml_are_same_shape(add, softplus) || !ggml_are_same_shape(softplus, mul)) {
+        return false;
+    }
+    const int64_t n = ggml_nelements(mul);
+    add_softplus_mul_f32<<<(n + 255) / 256, 256, 0, ctx.stream()>>>((const float *) a->data, (const float *) b->data,
+        (const float *) c->data, (float *) mul->data, ne0, n);
+    return true;
+}

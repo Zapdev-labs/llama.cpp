@@ -474,6 +474,8 @@ static bool ggml_backend_cpu_device_supports_op(ggml_backend_dev_t dev, const st
                 src1->type == GGML_TYPE_F32 && op->type == GGML_TYPE_F32;
         case GGML_OP_CONV_2D:
             return ggml_is_contiguous(op->src[0]);
+        case GGML_OP_GATED_DELTA_NET:
+            return op->src[5]->type == GGML_TYPE_F32;
         default:
             return true;
     }

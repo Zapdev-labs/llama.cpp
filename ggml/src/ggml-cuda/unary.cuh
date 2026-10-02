@@ -112,3 +112,9 @@ __device__ __forceinline__ float ggml_cuda_op_swiglu_oai_single(float x, float g
     out_glu = out_glu * (1.0f + g);
     return out_glu;
 }
+
+// cont(strided gate) -> sigmoid -> mul(other): reads the gate view directly
+bool ggml_cuda_op_cont_sigmoid_mul(ggml_backend_cuda_context & ctx, const ggml_tensor * cont, const ggml_tensor * sigmoid, ggml_tensor * mul);
+
+// add(a, b) -> softplus -> mul(c), b and c broadcast along rows
+bool ggml_cuda_op_add_softplus_mul(ggml_backend_cuda_context & ctx, const ggml_tensor * add, const ggml_tensor * softplus, ggml_tensor * mul);
