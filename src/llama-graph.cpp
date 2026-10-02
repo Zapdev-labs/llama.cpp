@@ -3499,7 +3499,12 @@ ggml_tensor * llm_graph_context::build_rs(
     // NOTE: assuming the copy destinations are ALL contained between rs_head and rs_head + n_rs
     // {state_size, rs_size} -> {state_size, n_seqs}
     // when every sequence reads its own cell, use the cache rows in place (saves a full read + write of the states)
-    ggml_tensor * output_states = main_identity
+    // only for the plain gather: custom get_state_rows (e.g. mamba's ssm_scan) do the actual computation
+    using get_rows_ptr = ggml_tensor * (*)(ggml_context *, ggml_tensor *, ggml_tensor *);
+    const auto * get_rows_fn = get_state_rows.target<get_rows_ptr>();
+    const bool is_gather = get_rows_fn != nullptr && *get_rows_fn == ggml_get_rows;
+
+    ggml_tensor * output_states = main_identity && is_gather
         ? ggml_view_2d(ctx0, states, state_size, n_seqs, states->nb[1], rs_head*states->nb[1])
         : get_state_rows(ctx0, states, state_copy_main);
     ggml_build_forward_expand(gf, output_states);

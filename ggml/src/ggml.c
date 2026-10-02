@@ -6781,7 +6781,7 @@ static void ggml_compute_backward(
             if (src2_needs_grads) {
                 struct ggml_tensor * idxs = tensor->src[1];
                 struct ggml_tensor * zeros_b = ggml_fill(ctx, ggml_dup_tensor(ctx, tensor->src[0]), 0.0f);
-                struct ggml_tensor * dgrad_a = ggml_set_rows(ctx, ggml_dup_tensor(ctx, grad), zeros_b, idxs);
+                struct ggml_tensor * dgrad_a = ggml_set_rows(ctx, ggml_dup(ctx, grad), zeros_b, idxs);
                 ggml_add_or_set(ctx, cgraph, isrc2, dgrad_a);
             }
         } break;
@@ -7605,8 +7605,7 @@ void ggml_graph_cpy(struct ggml_cgraph * src, struct ggml_cgraph * dst) {
 }
 
 struct ggml_cgraph * ggml_graph_dup(struct ggml_context * ctx, struct ggml_cgraph * cgraph, bool force_grads) {
-    // backward expansion adds many nodes; oversize the duplicated graph when grads are enabled
-    struct ggml_cgraph * result = ggml_new_graph_custom(ctx, 4*cgraph->size, cgraph->grads || force_grads);
+    struct ggml_cgraph * result = ggml_new_graph_custom(ctx, cgraph->size, cgraph->grads || force_grads);
     ggml_graph_cpy(cgraph, result);
     return result;
 }

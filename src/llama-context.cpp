@@ -2336,7 +2336,9 @@ uint32_t llama_context::graph_max_nodes(uint32_t n_tokens) const {
 
     // training (ggml_opt) backward graphs contain significantly more nodes than the forward
     // graphs used to size the scheduler; grow the reservation to cover backward+optimizer graphs
-    res *= 6;
+    if (cparams.ctx_type == LLAMA_CONTEXT_TYPE_OPT) {
+        res *= 6;
+    }
 
     uint32_t n_sampling_nodes = 0;
     uint32_t n_sampling_nodes_max = 0;
