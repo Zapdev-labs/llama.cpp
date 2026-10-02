@@ -2968,7 +2968,7 @@ static int ggml_cuda_try_conv_state_fusion(ggml_backend_cuda_context * cuda_ctx,
         return 0;
     }
 
-    ggml_tensor * out = (ggml_tensor *) conv;
+    ggml_tensor * out = cgraph->nodes[k];
     bool silu = false;
     if (k + 1 < cgraph->n_nodes) {
         ggml_tensor * u = cgraph->nodes[k + 1];
@@ -3636,27 +3636,10 @@ static bool ggml_cuda_can_fuse(const struct ggml_cgraph *                cgraph,
     return false;
 }
 
-// try and fuse nodes and return the number of nodes to skip
-static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph * cgraph, int i) {
-
-    static bool disable_fusion = getenv("GGML_CUDA_DISABLE_FUSION") != nullptr && std::atoi(getenv("GGML_CUDA_DISABLE_FUSION"));
-    if (disable_fusion) {
-        return 0;
-    }
-
+// fusions for qwen35-style decode graphs (delta net, gated norm, swiglu -> mmq); kept out of
+// ggml_cuda_try_fuse so they do not perturb its inlining. returns the number of nodes to skip
+static int ggml_cuda_try_fuse_qwen35(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph * cgraph, int i) {
     ggml_tensor * node = cgraph->nodes[i];
-
-    if (node->op == GGML_OP_MUL) {
-        ggml_cuda_moe_weighted_reduction_match match;
-        if (ggml_cuda_match_moe_weighted_reduction(cgraph, i, match)) {
-            const int output_idx = i + match.node_count - 1;
-            if (ggml_cuda_check_fusion_memory_ranges(cgraph, i, match.node_count, &output_idx, 1)) {
-                ggml_cuda_op_moe_weighted_reduction(
-                    *cuda_ctx, match.experts, match.expert_scale, match.weights, match.dst);
-                return match.node_count - 1;
-            }
-        }
-    }
 
     // cont(gate view) -> sigmoid -> mul, add -> softplus -> mul (small elementwise chains)
     if ((node->op == GGML_OP_CONT || node->op == GGML_OP_ADD) && i + 2 < cgraph->n_nodes && ggml_node_has_n_uses(cgraph, i, 1)) {
@@ -3759,6 +3742,38 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
     if (node->op == GGML_OP_CONCAT || node->op == GGML_OP_CPY) {
         static const bool disabled = getenv("GGML_CUDA_NO_CONV_STATE_FUSION") != nullptr;
         const int nodes_to_skip = disabled ? 0 : ggml_cuda_try_conv_state_fusion(cuda_ctx, cgraph, i);
+        if (nodes_to_skip > 0) {
+            return nodes_to_skip;
+        }
+    }
+
+    return 0;
+}
+
+// try and fuse nodes and return the number of nodes to skip
+static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph * cgraph, int i) {
+
+    static bool disable_fusion = getenv("GGML_CUDA_DISABLE_FUSION") != nullptr && std::atoi(getenv("GGML_CUDA_DISABLE_FUSION"));
+    if (disable_fusion) {
+        return 0;
+    }
+
+    ggml_tensor * node = cgraph->nodes[i];
+
+    if (node->op == GGML_OP_MUL) {
+        ggml_cuda_moe_weighted_reduction_match match;
+        if (ggml_cuda_match_moe_weighted_reduction(cgraph, i, match)) {
+            const int output_idx = i + match.node_count - 1;
+            if (ggml_cuda_check_fusion_memory_ranges(cgraph, i, match.node_count, &output_idx, 1)) {
+                ggml_cuda_op_moe_weighted_reduction(
+                    *cuda_ctx, match.experts, match.expert_scale, match.weights, match.dst);
+                return match.node_count - 1;
+            }
+        }
+    }
+
+    {
+        const int nodes_to_skip = ggml_cuda_try_fuse_qwen35(cuda_ctx, cgraph, i);
         if (nodes_to_skip > 0) {
             return nodes_to_skip;
         }
