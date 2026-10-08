@@ -4370,6 +4370,28 @@ llama_pos llama_memory_seq_pos_max(
     return mem->seq_pos_max(seq_id);
 }
 
+llama_pos llama_memory_state_pos_min(
+        llama_memory_t        mem,
+          llama_seq_id        seq_id,
+    llama_state_seq_flags flags) {
+    if (!mem) {
+        return -1;
+    }
+
+    return mem->state_pos_min(seq_id, flags);
+}
+
+llama_pos llama_memory_state_pos_max(
+        llama_memory_t        mem,
+          llama_seq_id        seq_id,
+    llama_state_seq_flags flags) {
+    if (!mem) {
+        return -1;
+    }
+
+    return mem->state_pos_max(seq_id, flags);
+}
+
 bool llama_memory_can_shift(llama_memory_t mem) {
     if (!mem) {
         return false;

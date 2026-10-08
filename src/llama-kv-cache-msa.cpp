@@ -91,6 +91,15 @@ llama_pos llama_kv_cache_msa::seq_pos_max(llama_seq_id seq_id) const {
     return kv_base->seq_pos_max(seq_id);
 }
 
+llama_pos llama_kv_cache_msa::state_pos_min(llama_seq_id seq_id, llama_state_seq_flags flags) const {
+    // a saved state only covers positions present in both caches
+    return std::max(kv_base->state_pos_min(seq_id, flags), kv_idx->state_pos_min(seq_id, flags));
+}
+
+llama_pos llama_kv_cache_msa::state_pos_max(llama_seq_id seq_id, llama_state_seq_flags flags) const {
+    return std::min(kv_base->state_pos_max(seq_id, flags), kv_idx->state_pos_max(seq_id, flags));
+}
+
 std::map<ggml_backend_buffer_type_t, size_t> llama_kv_cache_msa::memory_breakdown() const {
     std::map<ggml_backend_buffer_type_t, size_t> mb = kv_base->memory_breakdown();
     for (const auto & buft_size : kv_idx->memory_breakdown()) {

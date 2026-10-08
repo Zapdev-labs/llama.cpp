@@ -2516,7 +2516,7 @@ private:
     }
 
     // n_tokens_cur: the number of tokens added to the batch for the current slot
-    void create_checkpoint(server_slot & slot, const int64_t n_tokens_cur, llama_pos pos_min, llama_pos pos_max) {
+    void create_checkpoint(server_slot & slot, const int64_t n_tokens_cur) {
         const int id_task = slot.task->id;
 
         // evict checkpoints within min-step of a previous checkpoint, unless they were
@@ -2565,10 +2565,13 @@ private:
 
         cur.id_task = id_task;
 
-        // [TAG_CHECKPOINTS_FIX_POS_MIN]
-        // TODO: here we incorrectly deterimne that the saved checkpoint data covers the [pos_min, pos_max] range
-        //       this is not true for SWA models: https://github.com/ggml-org/llama.cpp/pull/24411#issuecomment-4677983225
-        cur.update_pos(slot.prompt.n_tokens() - n_tokens_cur, pos_min, pos_max);
+        // the checkpoint covers only the positions that the state save serializes, which for
+        // SWA models is narrower than the full memory range [TAG_CHECKPOINTS_FIX_POS_MIN]
+        const auto mem = llama_get_memory(ctx_tgt);
+
+        cur.update_pos(slot.prompt.n_tokens() - n_tokens_cur,
+                llama_memory_state_pos_min(mem, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY),
+                llama_memory_state_pos_max(mem, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY));
 
         cur.update_tgt(ctx_tgt, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
         cur.update_dft(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
@@ -3590,7 +3593,7 @@ private:
                                         [&](const auto & cur) {
                                             // guarantee that a checkpoint will result in at least one token being processed [TAG_PROMPT_LOGITS]
                                             SLT_TRC(slot, "checking checkpoint with [%d, %d] against %d...\n", cur.pos_min, cur.pos_max, pos_min_thold);
-                                            // workaround for [TAG_CHECKPOINTS_FIX_POS_MIN]
+                                            // checkpoints that cover positions beyond pos_next cannot be reused
                                             if (cur.pos_max > pos_next) {
                                                 return false;
                                             }
@@ -3907,7 +3910,7 @@ private:
                     // note: we create the checkpoint before calling llama_decode(), so the current batch is not
                     //       yet processed and therefore it is not part of the checkpoint.
                     if (do_checkpoint) {
-                        create_checkpoint(slot, n_tokens_cur, pos_min, pos_max);
+                        create_checkpoint(slot, n_tokens_cur);
                     }
                 }
 

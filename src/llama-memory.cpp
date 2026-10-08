@@ -57,3 +57,15 @@ bool llama_memory_status_is_fail(llama_memory_status status) {
 
     return false;
 }
+
+llama_pos llama_memory_i::state_pos_min(llama_seq_id seq_id, llama_state_seq_flags flags) const {
+    GGML_UNUSED(flags);
+
+    return seq_pos_min(seq_id);
+}
+
+llama_pos llama_memory_i::state_pos_max(llama_seq_id seq_id, llama_state_seq_flags flags) const {
+    GGML_UNUSED(flags);
+
+    return seq_pos_max(seq_id);
+}

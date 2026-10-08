@@ -116,6 +116,11 @@ struct llama_memory_i {
     virtual llama_pos seq_pos_min(llama_seq_id seq_id) const = 0;
     virtual llama_pos seq_pos_max(llama_seq_id seq_id) const = 0;
 
+    // the range of positions covered by a saved sequence state - can be
+    // narrower than [seq_pos_min, seq_pos_max] when parts of the state are not serialized
+    virtual llama_pos state_pos_min(llama_seq_id seq_id, llama_state_seq_flags flags) const;
+    virtual llama_pos state_pos_max(llama_seq_id seq_id, llama_state_seq_flags flags) const;
+
     virtual std::map<ggml_backend_buffer_type_t, size_t> memory_breakdown() const = 0;
 
     //
