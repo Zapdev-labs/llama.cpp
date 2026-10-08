@@ -933,6 +933,22 @@ extern "C" {
 
     typedef uint32_t llama_state_seq_flags;
 
+    // Returns the smallest position covered by a sequence state save with the given flags
+    // The covered range [pos_min, pos_max] can be smaller than llama_memory_seq_pos_min/max, e.g.
+    // SWA caches only save the cells inside the sliding window
+    // Return -1 if the sequence state is empty
+    LLAMA_API llama_pos llama_memory_state_pos_min(
+            llama_memory_t        mem,
+              llama_seq_id        seq_id,
+            llama_state_seq_flags flags);
+
+    // Returns the largest position covered by a sequence state save with the given flags
+    // Return -1 if the sequence state is empty
+    LLAMA_API llama_pos llama_memory_state_pos_max(
+            llama_memory_t        mem,
+              llama_seq_id        seq_id,
+            llama_state_seq_flags flags);
+
     LLAMA_API size_t llama_state_seq_get_size_ext(
             struct llama_context * ctx,
                     llama_seq_id   seq_id,

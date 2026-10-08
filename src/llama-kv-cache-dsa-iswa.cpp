@@ -118,6 +118,22 @@ llama_pos llama_kv_cache_dsa_iswa::seq_pos_max(llama_seq_id seq_id) const {
     return kv_swa->seq_pos_max(seq_id);
 }
 
+llama_pos llama_kv_cache_dsa_iswa::state_pos_min(llama_seq_id seq_id, llama_state_seq_flags flags) const {
+    if ((flags & LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY) != 0) {
+        return kv_swa->state_pos_min(seq_id, flags);
+    }
+
+    return std::max(kv_dsa->state_pos_min(seq_id, flags), kv_swa->state_pos_min(seq_id, flags));
+}
+
+llama_pos llama_kv_cache_dsa_iswa::state_pos_max(llama_seq_id seq_id, llama_state_seq_flags flags) const {
+    if ((flags & LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY) != 0) {
+        return kv_swa->state_pos_max(seq_id, flags);
+    }
+
+    return std::min(kv_dsa->state_pos_max(seq_id, flags), kv_swa->state_pos_max(seq_id, flags));
+}
+
 std::map<ggml_backend_buffer_type_t, size_t> llama_kv_cache_dsa_iswa::memory_breakdown() const {
     std::map<ggml_backend_buffer_type_t, size_t> mb = kv_dsa->memory_breakdown();
     for (const auto & buft_size : kv_swa->memory_breakdown()) {

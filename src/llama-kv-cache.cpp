@@ -700,6 +700,44 @@ llama_pos llama_kv_cache::seq_pos_max(llama_seq_id seq_id) const {
     return cells.seq_pos_max(seq_id);
 }
 
+llama_pos llama_kv_cache::state_pos_min(llama_seq_id seq_id, llama_state_seq_flags flags) const {
+    // TODO: refactor [TAG_KV_CACHE_SHARE_CELLS]
+    if (other) {
+        return other->state_pos_min(seq_id, flags);
+    }
+
+    GGML_UNUSED(flags);
+
+    GGML_ASSERT(seq_id >= 0 && (size_t) seq_id < seq_to_stream.size());
+
+    const auto & cells = v_cells[seq_to_stream[seq_id]];
+
+    if (n_swa == 0) {
+        return cells.seq_pos_min(seq_id);
+    }
+
+    // cells outside of the sliding window are not serialized (see state_write)
+    const llama_pos p1 = cells.seq_pos_max(seq_id);
+
+    llama_pos result = p1;
+
+    for (uint32_t i = 0; i < cells.size(); ++i) {
+        if (cells.is_empty(i) || !cells.seq_has(i, seq_id)) {
+            continue;
+        }
+
+        const llama_pos p0 = cells.pos_get(i);
+
+        if (llama_hparams::is_masked_swa(n_swa, swa_type, p0, p1)) {
+            continue;
+        }
+
+        result = std::min(result, p0);
+    }
+
+    return result;
+}
+
 std::map<ggml_backend_buffer_type_t, size_t> llama_kv_cache::memory_breakdown() const {
     std::map<ggml_backend_buffer_type_t, size_t> ret;
     for (const auto & [ctx, buf] : ctxs_bufs) {
